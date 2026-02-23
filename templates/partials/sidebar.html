@@ -1,0 +1,31 @@
+<nav class="sidebar" id="sidebar">
+    <div class="sidebar-logo">⚡ QuizAdmin</div>
+    <a href="{{ url_for('admin_dashboard') }}"
+        class="sidebar-link {% if request.endpoint == 'admin_dashboard' %}active{% endif %}">
+        <span>📊</span> Dashboard
+    </a>
+    <a href="{{ url_for('admin_questions') }}"
+        class="sidebar-link {% if 'question' in request.endpoint %}active{% endif %}">
+        <span>❓</span> Questions
+    </a>
+    <a href="{{ url_for('admin_participants') }}"
+        class="sidebar-link {% if request.endpoint == 'admin_participants' %}active{% endif %}">
+        <span>👥</span> Participants
+    </a>
+    <a href="{{ url_for('admin_violations') }}"
+        class="sidebar-link {% if request.endpoint == 'admin_violations' %}active{% endif %}">
+        <span>⚠️</span> Violations
+    </a>
+    <a href="{{ url_for('admin_leaderboard') }}"
+        class="sidebar-link {% if request.endpoint == 'admin_leaderboard' %}active{% endif %}">
+        <span>🏆</span> Leaderboard
+    </a>
+    <a href="{{ url_for('admin_export_csv') }}" class="sidebar-link">
+        <span>⬇️</span> Export CSV
+    </a>
+    <div class="sidebar-spacer"></div>
+    <a href="{{ url_for('admin_logout') }}" class="sidebar-link sidebar-logout">
+        <span>🚪</span> Logout
+    </a>
+</nav>
+<button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">☰</button>

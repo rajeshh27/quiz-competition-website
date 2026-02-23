@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard — Smart Quiz{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    <!-- Sidebar -->
+    {% include 'partials/sidebar.html' %}
+
+    <!-- Main -->
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div>
+                <h1 class="admin-page-title">Dashboard</h1>
+                <p class="admin-page-sub">Overview of your quiz system</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="status-chip {% if quiz_open %}chip-green{% else %}chip-red{% endif %}">
+                    {% if quiz_open %}🟢 Quiz Live{% else %}🔴 Quiz Off{% endif %}
+                </span>
+                <a href="{{ url_for('admin_logout') }}" class="btn btn-outline btn-sm">Logout</a>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card stat-purple">
+                <div class="stat-ico">❓</div>
+                <div class="stat-info">
+                    <div class="stat-num">{{ total_q }}</div>
+                    <div class="stat-lbl">Questions</div>
+                </div>
+            </div>
+            <div class="stat-card stat-blue">
+                <div class="stat-ico">👥</div>
+                <div class="stat-info">
+                    <div class="stat-num">{{ total_p }}</div>
+                    <div class="stat-lbl">Participants</div>
+                </div>
+            </div>
+            <div class="stat-card stat-green">
+                <div class="stat-ico">✅</div>
+                <div class="stat-info">
+                    <div class="stat-num">{{ total_attempts }}</div>
+                    <div class="stat-lbl">Submissions</div>
+                </div>
+            </div>
+            <div class="stat-card stat-red">
+                <div class="stat-ico">⚠️</div>
+                <div class="stat-info">
+                    <div class="stat-num">{{ total_viol }}</div>
+                    <div class="stat-lbl">Violations</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Form -->
+        <div class="admin-card">
+            <div class="card-header-row">
+                <h2 class="card-title">⚙️ Quiz Settings</h2>
+            </div>
+            <form class="settings-form" method="POST" action="{{ url_for('admin_save_settings') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <div class="settings-grid">
+                    <div class="form-group">
+                        <label class="form-label">Duration (minutes)</label>
+                        <input type="number" name="duration" class="form-control"
+                            value="{{ settings.duration_minutes if settings else 30 }}" min="1" max="300" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Violations</label>
+                        <input type="number" name="max_violations" class="form-control"
+                            value="{{ settings.max_violations if settings else 3 }}" min="1" max="10" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Start Time (optional)</label>
+                        <input type="datetime-local" name="start_time" class="form-control"
+                            value="{{ settings.start_time.strftime('%Y-%m-%dT%H:%M') if settings and settings.start_time else '' }}" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">End Time (optional)</label>
+                        <input type="datetime-local" name="end_time" class="form-control"
+                            value="{{ settings.end_time.strftime('%Y-%m-%dT%H:%M') if settings and settings.end_time else '' }}" />
+                    </div>
+                </div>
+                <div class="toggle-row">
+                    <label class="toggle-label">
+                        <input type="checkbox" name="is_active" id="quizActiveToggle" {% if settings and
+                            settings.is_active %}checked{% endif %} />
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="toggle-text">Quiz Active</span>
+                </div>
+                <button type="submit" class="btn btn-primary" id="saveSettingsBtn">Save Settings</button>
+            </form>
+        </div>
+
+        <!-- Recent Submissions -->
+        <div class="admin-card">
+            <div class="card-header-row">
+                <h2 class="card-title">📋 Recent Submissions</h2>
+                <a href="{{ url_for('admin_export_csv') }}" class="btn btn-outline btn-sm">⬇ Export CSV</a>
+            </div>
+            {% if recent_subs %}
+            <div class="scroll-table">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Reg No</th>
+                            <th>Score</th>
+                            <th>Time</th>
+                            <th>Auto?</th>
+                            <th>Submitted</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in recent_subs %}
+                        <tr>
+                            <td><strong>{{ s.name }}</strong></td>
+                            <td>{{ s.register_no }}</td>
+                            <td>
+                                <span
+                                    class="score-pill {% if (s.score / s.total_marks * 100) >= 75 %}pill-green{% elif (s.score / s.total_marks * 100) >= 40 %}pill-amber{% else %}pill-red{% endif %}">
+                                    {{ s.score }}/{{ s.total_marks }}
+                                </span>
+                            </td>
+                            <td>{{ s.time_taken // 60 }}m {{ s.time_taken % 60 }}s</td>
+                            <td>{% if s.auto_submitted %}<span class="badge badge-danger">Auto</span>{% else %}<span
+                                    class="badge badge-success">Manual</span>{% endif %}</td>
+                            <td>{{ s.submitted_at.strftime('%d %b %I:%M %p') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="empty-note">No submissions yet.</p>
+            {% endif %}
+        </div>
+
+    </main>
+</div>
+{% endblock %}

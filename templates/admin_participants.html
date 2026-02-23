@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Participants — Admin{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    {% include 'partials/sidebar.html' %}
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div>
+                <h1 class="admin-page-title">👥 Participants</h1>
+                <p class="admin-page-sub">All registered participants</p>
+            </div>
+            <a href="{{ url_for('admin_export_csv') }}" class="btn btn-outline btn-sm">⬇ CSV</a>
+        </div>
+
+        <div class="admin-card">
+            {% if participants %}
+            <div class="scroll-table">
+                <table class="data-table" id="participantsTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Reg No</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Score</th>
+                            <th>Violations</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in participants %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><strong>{{ p.name }}</strong></td>
+                            <td>{{ p.register_no }}</td>
+                            <td class="email-cell">{{ p.email }}</td>
+                            <td>
+                                {% if p.attempt_status == 'completed' %}
+                                <span class="badge badge-success">Done</span>
+                                {% elif p.attempt_status == 'in_progress' %}
+                                <span class="badge badge-warning">In Progress</span>
+                                {% else %}
+                                <span class="badge badge-outline">Not Started</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.score is not none %}
+                                <span
+                                    class="score-pill {% if p.score / p.total_marks >= 0.75 %}pill-green{% elif p.score / p.total_marks >= 0.4 %}pill-amber{% else %}pill-red{% endif %}">
+                                    {{ p.score }}/{{ p.total_marks }}
+                                </span>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if p.violation_count %}
+                                <span class="badge badge-danger">{{ p.violation_count }}</span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-icon">👥</p>
+                <p>No participants yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

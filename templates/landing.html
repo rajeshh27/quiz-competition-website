@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Quiz Platform — Home{% endblock %}
+{% block body_class %}landing-body{% endblock %}
+
+{% block content %}
+<div class="landing-wrap">
+    <!-- Hero -->
+    <div class="landing-hero">
+        <div class="hero-badge">🎓 Smart Quiz Platform</div>
+        <h1 class="hero-title">Test Your<br /><span class="grad-text">Knowledge</span></h1>
+        <p class="hero-sub">Secure · Timed · Mobile-First · Anti-Cheat</p>
+
+        <div class="landing-status-card">
+            <div class="status-dot {% if quiz_open %}dot-green{% else %}dot-red{% endif %}"></div>
+            <div>
+                <p class="status-label">Quiz Status</p>
+                <p class="status-val {% if quiz_open %}text-green{% else %}text-red{% endif %}">
+                    {% if quiz_open %}🟢 Live — Accepting entries{% else %}🔴 Not active{% endif %}
+                </p>
+            </div>
+        </div>
+
+        {% if settings and settings.start_time %}
+        <div class="meta-row">
+            <span class="meta-chip">⏱ {{ settings.duration_minutes }} min</span>
+            {% if settings.start_time %}<span class="meta-chip">📅 {{ settings.start_time.strftime('%d %b %Y, %I:%M %p')
+                }}</span>{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="landing-cta">
+            {% if quiz_open %}
+            <a href="{{ url_for('participant_login') }}" class="btn btn-primary btn-lg" id="enterQuizBtn">
+                Enter Quiz →
+            </a>
+            {% else %}
+            <button class="btn btn-disabled btn-lg" disabled>Quiz is Closed</button>
+            {% endif %}
+            <a href="{{ url_for('leaderboard') }}" class="btn btn-outline btn-lg">🏆 Leaderboard</a>
+        </div>
+
+        <a href="{{ url_for('admin_login') }}" class="admin-link">Admin Login →</a>
+    </div>
+
+    <!-- Features -->
+    <div class="features-grid">
+        <div class="feat-card">
+            <div class="feat-icon">🔒</div>
+            <h3>Anti-Cheat</h3>
+            <p>Tab switch detection, fullscreen enforcement, auto-submit on violation</p>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">⏱</div>
+            <h3>Live Timer</h3>
+            <p>Sticky countdown with server-validated time, auto-submission on expiry</p>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">📱</div>
+            <h3>Mobile-First</h3>
+            <p>Optimized for 360–430px screens, touch-friendly, no horizontal scroll</p>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">📊</div>
+            <h3>Instant Results</h3>
+            <p>Score calculated server-side, rank, time taken, and violation report</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Questions — Admin{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    {% include 'partials/sidebar.html' %}
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div>
+                <h1 class="admin-page-title">❓ Questions</h1>
+                <p class="admin-page-sub">Manage all quiz questions</p>
+            </div>
+            <a href="{{ url_for('admin_add_question') }}" class="btn btn-primary" id="addQuestionBtn">+ Add Question</a>
+        </div>
+
+        <div class="admin-card">
+            {% if questions %}
+            <div class="scroll-table">
+                <table class="data-table" id="questionsTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Question</th>
+                            <th>Answer</th>
+                            <th>Marks</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for q in questions %}
+                        <tr id="qrow_{{ q.id }}">
+                            <td>{{ loop.index }}</td>
+                            <td class="q-text-cell">{{ q.question_text[:80] }}{% if q.question_text|length > 80 %}…{%
+                                endif %}</td>
+                            <td><span class="answer-badge">{{ q.correct_answer }}</span></td>
+                            <td>{{ q.marks }}</td>
+                            <td>
+                                {% if q.is_active %}
+                                <span class="badge badge-success">Active</span>
+                                {% else %}
+                                <span class="badge badge-danger">Deleted</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-btns">
+                                    <a href="{{ url_for('admin_edit_question', qid=q.id) }}"
+                                        class="btn btn-outline btn-xs">Edit</a>
+                                    <form method="POST" action="{{ url_for('admin_delete_question', qid=q.id) }}"
+                                        onsubmit="return confirm('Delete this question?')" style="display:inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                                        <button type="submit" class="btn btn-danger btn-xs">Del</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-icon">📭</p>
+                <p>No questions yet.</p>
+                <a href="{{ url_for('admin_add_question') }}" class="btn btn-primary">Add First Question</a>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Admin Login — Smart Quiz{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-card">
+        <div class="auth-logo">⚡ QuizAdmin</div>
+        <p class="auth-sub">Administrator Portal</p>
+
+        <form method="POST" action="{{ url_for('admin_login') }}" class="auth-form" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+            <div class="form-group">
+                <label class="form-label" for="email">Email Address</label>
+                <input type="email" id="email" name="email" class="form-control" placeholder="admin@quiz.com" required
+                    autocomplete="email" />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                <div class="pw-wrap">
+                    <input type="password" id="password" name="password" class="form-control" placeholder="••••••••"
+                        required autocomplete="current-password" />
+                    <button type="button" class="pw-toggle" onclick="togglePw('password')"
+                        aria-label="Show password">👁</button>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full btn-lg" id="adminLoginBtn">
+                Login to Dashboard
+            </button>
+        </form>
+
+        <div class="auth-back">
+            <a href="{{ url_for('landing') }}">← Back to Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function togglePw(id) {
+        const f = document.getElementById(id);
+        f.type = f.type === 'password' ? 'text' : 'password';
+    }
+</script>
+{% endblock %}

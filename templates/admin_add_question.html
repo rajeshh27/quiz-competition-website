@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{% if question %}Edit{% else %}Add{% endif %} Question — Admin{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    {% include 'partials/sidebar.html' %}
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div>
+                <h1 class="admin-page-title">{% if question %}✏️ Edit Question{% else %}➕ Add Question{% endif %}</h1>
+            </div>
+            <a href="{{ url_for('admin_questions') }}" class="btn btn-outline btn-sm">← Back</a>
+        </div>
+
+        <div class="admin-card form-card">
+            <form method="POST" class="add-q-form" id="addQuestionForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+                <div class="form-group">
+                    <label class="form-label">Question Text <span class="req">*</span></label>
+                    <textarea name="question_text" class="form-control form-textarea" rows="3"
+                        placeholder="Enter the question…" required
+                        id="questionText">{{ question.question_text if question else '' }}</textarea>
+                </div>
+
+                <div class="options-grid">
+                    {% for letter in ['a','b','c','d'] %}
+                    <div class="form-group">
+                        <label class="form-label">Option {{ letter.upper() }} <span class="req">*</span></label>
+                        <input type="text" name="option_{{ letter }}" class="form-control"
+                            placeholder="Option {{ letter.upper() }}" required id="opt{{ letter.upper() }}"
+                            value="{{ question['option_' + letter] if question else '' }}" />
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="bottom-row">
+                    <div class="form-group">
+                        <label class="form-label">Correct Answer <span class="req">*</span></label>
+                        <select name="correct_answer" class="form-control" id="correctAnswer" required>
+                            {% for letter in ['A','B','C','D'] %}
+                            <option value="{{ letter }}" {% if question and question.correct_answer==letter %}selected{%
+                                endif %}>
+                                Option {{ letter }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Marks</label>
+                        <input type="number" name="marks" class="form-control" id="marks" min="1" max="10"
+                            value="{{ question.marks if question else 1 }}" />
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <a href="{{ url_for('admin_questions') }}" class="btn btn-outline">Cancel</a>
+                    <button type="submit" class="btn btn-primary" id="saveQuestionBtn">
+                        {% if question %}Update Question{% else %}Save Question{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+</div>
+{% endblock %}

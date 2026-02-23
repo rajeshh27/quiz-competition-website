@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — Admin{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    {% include 'partials/sidebar.html' %}
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div>
+                <h1 class="admin-page-title">🏆 Leaderboard</h1>
+                <p class="admin-page-sub">All participants ranked by score</p>
+            </div>
+            <a href="{{ url_for('admin_export_csv') }}" class="btn btn-outline btn-sm">⬇ CSV</a>
+        </div>
+
+        <div class="admin-card">
+            {% if board %}
+            <div class="scroll-table">
+                <table class="data-table" id="leaderboardTable">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Name</th>
+                            <th>Reg No</th>
+                            <th>Score</th>
+                            <th>%</th>
+                            <th>Time</th>
+                            <th>Violations</th>
+                            <th>Auto?</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in board %}
+                        <tr
+                            class="{% if loop.index == 1 %}rank-gold{% elif loop.index == 2 %}rank-silver{% elif loop.index == 3 %}rank-bronze{% endif %}">
+                            <td>
+                                {% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{%
+                                else %}{{ loop.index }}{% endif %}
+                            </td>
+                            <td><strong>{{ row.name }}</strong></td>
+                            <td>{{ row.register_no }}</td>
+                            <td>
+                                <span
+                                    class="score-pill {% if row.score / row.total_marks >= 0.75 %}pill-green{% elif row.score / row.total_marks >= 0.4 %}pill-amber{% else %}pill-red{% endif %}">
+                                    {{ row.score }}/{{ row.total_marks }}
+                                </span>
+                            </td>
+                            <td>{{ ((row.score / row.total_marks) * 100)|round(1) }}%</td>
+                            <td>{{ row.time_taken // 60 }}m {{ row.time_taken % 60 }}s</td>
+                            <td>
+                                {% if row.violations > 0 %}
+                                <span class="badge badge-danger">{{ row.violations }}</span>
+                                {% else %}<span class="text-muted">0</span>{% endif %}
+                            </td>
+                            <td>
+                                {% if row.auto_submitted %}
+                                <span class="badge badge-danger">Auto</span>
+                                {% else %}<span class="badge badge-success">Manual</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-icon">📭</p>
+                <p>No submissions yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

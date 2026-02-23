@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Quiz — Smart Quiz System{% endblock %}
+{% block body_class %}quiz-body{% endblock %}
+
+{% block content %}
+<!-- Violation Popup -->
+<div class="violation-overlay" id="violationOverlay">
+    <div class="violation-card">
+        <div class="violation-icon">⚠️</div>
+        <h2 class="violation-title">Rule Violation Detected</h2>
+        <p class="violation-msg" id="violationMsg">You switched tabs or minimized the browser.</p>
+        <div class="violation-counter">
+            Violations: <span id="violCount">0</span> / <span id="maxViol">3</span>
+        </div>
+        <button class="btn btn-primary" id="violationDismiss" onclick="dismissViolation()">
+            Return to Quiz
+        </button>
+    </div>
+</div>
+
+<!-- Auto-submit Overlay -->
+<div class="submit-overlay" id="submitOverlay" style="display:none">
+    <div class="submit-card">
+        <div class="submit-icon">🚫</div>
+        <h2>Quiz Auto-Submitted</h2>
+        <p>You exceeded the maximum violations or time expired.</p>
+        <div class="loader-ring"></div>
+        <p class="loader-note">Saving your answers…</p>
+    </div>
+</div>
+
+<!-- Sticky Header -->
+<header class="quiz-header" id="quizHeader">
+    <div class="quiz-header-inner">
+        <div class="quiz-progress-wrap">
+            <span class="q-indicator" id="questionIndicator">Q 1 / {{ questions|length }}</span>
+            <div class="quiz-progress-bar">
+                <div class="quiz-progress-fill" id="progressFill" style="width:0%"></div>
+            </div>
+        </div>
+        <div class="quiz-timer" id="quizTimer">
+            <span class="timer-icon">⏱</span>
+            <span id="timerDisplay">{{ '%02d' % (remaining_seconds // 60) }}:{{ '%02d' % (remaining_seconds % 60)
+                }}</span>
+        </div>
+    </div>
+</header>
+
+<!-- Quiz Content -->
+<main class="quiz-main" id="quizMain">
+    <div class="quiz-info-bar">
+        <span class="q-name">👤 {{ participant_name }}</span>
+        <span class="viol-badge" id="violBadge">🛡 0 violations</span>
+    </div>
+
+    <!-- Questions -->
+    <div class="questions-container" id="questionsContainer">
+        {% for q in questions %}
+        <div class="question-slide {% if loop.index == 1 %}active{% endif %}" id="slide_{{ loop.index }}"
+            data-index="{{ loop.index }}" data-id="{{ q.id }}">
+            <div class="question-card">
+                <div class="q-number-badge">Question {{ loop.index }}<span class="q-marks"> · {{ q.marks }} mark{% if
+                        q.marks != 1 %}s{% endif %}</span></div>
+                <p class="question-text">{{ q.question_text }}</p>
+
+                <div class="options-list" id="opts_{{ q.id }}">
+                    {% set opts = [('A', q.option_a), ('B', q.option_b), ('C', q.option_c), ('D', q.option_d)] %}
+                    {% for letter, text in opts %}
+                    <button class="option-btn" data-qid="{{ q.id }}" data-opt="{{ letter }}"
+                        onclick="selectOption(this, '{{ q.id }}', '{{ letter }}')" id="opt_{{ q.id }}_{{ letter }}">
+                        <span class="opt-label">{{ letter }}</span>
+                        <span class="opt-text">{{ text }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Navigation -->
+    <div class="quiz-nav">
+        <button class="btn btn-outline" id="prevBtn" onclick="prevQuestion()" disabled>← Prev</button>
+        <div class="dots-wrap" id="dotsWrap">
+            {% for q in questions %}
+            <span class="nav-dot {% if loop.index == 1 %}dot-active{% endif %}" id="dot_{{ loop.index }}"
+                onclick="goToQuestion({{ loop.index }})"></span>
+            {% endfor %}
+        </div>
+        <button class="btn btn-outline" id="nextBtn" onclick="nextQuestion()">Next →</button>
+    </div>
+</main>
+
+<!-- Fixed Submit Button -->
+<div class="quiz-footer">
+    <button class="btn btn-submit btn-full" id="submitBtn" onclick="confirmSubmit()">
+        🏁 Submit Quiz
+    </button>
+</div>
+
+<!-- Confirm Submit Modal -->
+<div class="modal-overlay" id="confirmModal" style="display:none">
+    <div class="modal-card">
+        <h3>Submit Quiz?</h3>
+        <p id="confirmMsg">You have answered <span id="answeredCount">0</span> of {{ questions|length }} questions.</p>
+        <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal()">Review</button>
+            <button class="btn btn-primary" id="confirmSubmitBtn" onclick="doSubmit(false)">Submit Now</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const TOTAL_QUESTIONS = {{ questions| length }};
+    const REMAINING_SECONDS = {{ remaining_seconds }};
+    const CSRF_TOKEN = "{{ csrf_token() }}";
+    const MAX_VIOLATIONS = {{ settings.max_violations if settings else 3 }};
+</script>
+<script src="{{ url_for('static', filename='js/quiz.js') }}"></script>
+{% endblock %}

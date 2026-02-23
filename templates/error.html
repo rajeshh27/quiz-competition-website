@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} Error — Smart Quiz{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-card" style="text-align:center">
+        <div style="font-size:4rem;margin-bottom:12px">{% if code == 404 %}🔍{% elif code == 403 %}🚫{% else %}💥{%
+            endif %}</div>
+        <h1 style="font-size:3rem;font-weight:900;margin-bottom:8px">{{ code }}</h1>
+        <p style="color:var(--text-muted);margin-bottom:28px">{{ msg }}</p>
+        <a href="{{ url_for('landing') }}" class="btn btn-primary">Go Home</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — Smart Quiz{% endblock %}
+{% block body_class %}page-body{% endblock %}
+
+{% block content %}
+<div class="page-wrap">
+    <div class="page-header-row">
+        <div>
+            <h1 class="page-title">🏆 Leaderboard</h1>
+            <p class="page-sub">Top performers ranked by score &amp; speed</p>
+        </div>
+        <a href="{{ url_for('landing') }}" class="btn btn-outline btn-sm">← Home</a>
+    </div>
+
+    {% if board %}
+    <div class="table-card">
+        <table class="data-table" id="leaderboardTable">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Name</th>
+                    <th>Reg No</th>
+                    <th>Score</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in board %}
+                <tr
+                    class="{% if loop.index == 1 %}rank-gold{% elif loop.index == 2 %}rank-silver{% elif loop.index == 3 %}rank-bronze{% endif %}">
+                    <td>
+                        {% if loop.index == 1 %}🥇
+                        {% elif loop.index == 2 %}🥈
+                        {% elif loop.index == 3 %}🥉
+                        {% else %}{{ loop.index }}{% endif %}
+                    </td>
+                    <td><strong>{{ row.name }}</strong></td>
+                    <td>{{ row.register_no }}</td>
+                    <td>
+                        <span class="score-pill">{{ row.score }}/{{ row.total_marks }}</span>
+                    </td>
+                    <td>{{ row.time_taken // 60 }}m {{ row.time_taken % 60 }}s</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p class="empty-icon">📭</p>
+        <p>No results yet. Be the first to complete the quiz!</p>
+        <a href="{{ url_for('participant_login') }}" class="btn btn-primary">Take Quiz →</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

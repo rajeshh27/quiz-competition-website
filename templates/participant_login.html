@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Participant Login — Smart Quiz{% endblock %}
+{% block body_class %}auth-body{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-card">
+        <div class="auth-logo">📝 Quiz Login</div>
+        <p class="auth-sub">Enter your details to begin</p>
+
+        {% if not quiz_open %}
+        <div class="alert alert-warning">
+            ⚠ The quiz is currently not active. Please check back later.
+        </div>
+        {% endif %}
+
+        <div class="rules-box">
+            <p class="rules-title">📌 Rules Before You Start</p>
+            <ul class="rules-list">
+                <li>One attempt only — no re-entry allowed</li>
+                <li>Quiz runs in fullscreen — do not exit</li>
+                <li>Tab switching = 1 violation</li>
+                <li>3 violations = auto-submit</li>
+                <li>Score is calculated by the server</li>
+            </ul>
+        </div>
+
+        <form method="POST" action="{{ url_for('participant_login') }}" class="auth-form" id="loginForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+            <div class="form-group">
+                <label class="form-label" for="name">Full Name</label>
+                <input type="text" id="name" name="name" class="form-control" placeholder="Your full name" required
+                    autocomplete="name" />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="register_no">Register Number</label>
+                <input type="text" id="register_no" name="register_no" class="form-control"
+                    placeholder="e.g. REG2024001" required autocomplete="off" />
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="email">Email Address</label>
+                <input type="email" id="email" name="email" class="form-control" placeholder="your@email.com" required
+                    autocomplete="email" />
+            </div>
+
+            <div class="cb-wrap">
+                <input type="checkbox" id="agree" required />
+                <label for="agree">I agree to the rules and understand one attempt only</label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-full btn-lg" id="startQuizBtn" {% if not quiz_open
+                %}disabled{% endif %}>
+                Start Quiz →
+            </button>
+        </form>
+
+        <div class="auth-back">
+            <a href="{{ url_for('landing') }}">← Back to Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Violations — Admin{% endblock %}
+{% block body_class %}admin-body{% endblock %}
+
+{% block content %}
+<div class="admin-layout">
+    {% include 'partials/sidebar.html' %}
+    <main class="admin-main">
+        <div class="admin-topbar">
+            <div>
+                <h1 class="admin-page-title">⚠️ Violation Logs</h1>
+                <p class="admin-page-sub">All detected malpractice events</p>
+            </div>
+        </div>
+
+        <div class="admin-card">
+            {% if violations %}
+            <div class="scroll-table">
+                <table class="data-table" id="violationsTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Name</th>
+                            <th>Reg No</th>
+                            <th>Count</th>
+                            <th>Type</th>
+                            <th>Device</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for v in violations %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><strong>{{ v.name }}</strong></td>
+                            <td>{{ v.register_no }}</td>
+                            <td>
+                                <span
+                                    class="viol-count {% if v.violation_count >= 3 %}viol-critical{% else %}viol-warn{% endif %}">
+                                    {{ v.violation_count }}
+                                </span>
+                            </td>
+                            <td>{{ v.violation_type or 'tab_switch' }}</td>
+                            <td class="device-cell">{{ (v.device_info or 'Unknown')[:40] }}</td>
+                            <td>{{ v.timestamp.strftime('%d %b %I:%M %p') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <p class="empty-icon">✅</p>
+                <p>No violations recorded. All participants are behaving!</p>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Your Result — Smart Quiz{% endblock %}
+{% block body_class %}result-body{% endblock %}
+
+{% block content %}
+<div class="result-wrap">
+    <div class="result-card">
+
+        <!-- Score Ring -->
+        <div class="result-ring-wrap">
+            <svg class="ring-svg" viewBox="0 0 120 120" width="160" height="160">
+                <circle class="ring-bg" cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.08)"
+                    stroke-width="10" />
+                <circle class="ring-fill" cx="60" cy="60" r="50" fill="none"
+                    stroke="{% if pct >= 75 %}#10b981{% elif pct >= 40 %}#f59e0b{% else %}#ef4444{% endif %}"
+                    stroke-width="10" stroke-dasharray="{{ ((pct / 100) * 314)|round|int }} 314" stroke-linecap="round"
+                    transform="rotate(-90 60 60)" style="transition:stroke-dasharray 1.2s ease;" />
+            </svg>
+            <div class="ring-label">{{ pct }}%</div>
+        </div>
+
+        <!-- Name -->
+        <h1 class="result-name">{{ sub.name }}</h1>
+        <p class="result-reg">{{ sub.register_no }}</p>
+
+        <!-- Score -->
+        <div class="result-score-big">
+            <span class="score-num">{{ sub.score }}</span>
+            <span class="score-sep">/</span>
+            <span class="score-total">{{ sub.total_marks }}</span>
+        </div>
+
+        <!-- Grade -->
+        <div class="result-grade {% if pct >= 75 %}grade-a{% elif pct >= 40 %}grade-b{% else %}grade-c{% endif %}">
+            {% if pct >= 75 %}🏆 Excellent!{% elif pct >= 40 %}👍 Good Effort{% else %}📚 Keep Practicing{% endif %}
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="result-stats">
+            <div class="r-stat">
+                <span class="r-stat-val">🥇 #{{ rank }}</span>
+                <span class="r-stat-label">Rank</span>
+            </div>
+            <div class="r-stat">
+                <span class="r-stat-val">⏱ {{ sub.time_taken // 60 }}m {{ sub.time_taken % 60 }}s</span>
+                <span class="r-stat-label">Time Taken</span>
+            </div>
+            <div class="r-stat">
+                <span class="r-stat-val {% if violations > 0 %}text-red{% endif %}">⚠ {{ violations }}</span>
+                <span class="r-stat-label">Violations</span>
+            </div>
+        </div>
+
+        {% if sub.auto_submitted %}
+        <div class="alert alert-danger result-alert">
+            🚫 This quiz was auto-submitted due to rule violations.
+        </div>
+        {% endif %}
+
+        <div class="result-actions">
+            <a href="{{ url_for('leaderboard') }}" class="btn btn-outline">🏆 View Leaderboard</a>
+            <a href="{{ url_for('landing') }}" class="btn btn-primary">🏠 Go Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Animate ring on load
+    document.addEventListener('DOMContentLoaded', () => {
+        const ring = document.querySelector('.ring-fill');
+        const pct = {{ pct }
+    };
+    ring.style.strokeDasharray = `${(pct / 100 * 314).toFixed(0)} 314`;
+});
+</script>
+{% endblock %}
