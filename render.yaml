@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: smart-quiz-system
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true       # Render auto-generates a secure random key
+      - key: DB_HOST
+        sync: false               # You fill this manually in Render dashboard
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        value: quiz_system
