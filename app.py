@@ -1,53 +1,70 @@
 """
-Smart Quiz System — Flask Backend (app.py)
+Smart Quiz System — Flask Backend (MongoDB Atlas Edition)
 All score calculations & answer validation happen server-side only.
+HTML/CSS/JS unchanged — only DB layer swapped to MongoDB.
 """
 
 import os, json, csv, io
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 from dotenv import load_dotenv
+from bson import ObjectId
 
-import pymysql
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, jsonify, flash, Response
 )
 from flask_bcrypt import Bcrypt
 from flask_wtf.csrf import CSRFProtect
+from pymongo import MongoClient, ASCENDING, DESCENDING
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key        = os.getenv("SECRET_KEY", "change-me-in-production")
-app.config["WTF_CSRF_TIME_LIMIT"] = None      # session-bound tokens
+app.config["WTF_CSRF_TIME_LIMIT"] = None
 bcrypt = Bcrypt(app)
 csrf   = CSRFProtect(app)
 
 # ──────────────────────────────────────────
-#  DB helper
+#  MongoDB Atlas connection
 # ──────────────────────────────────────────
-def get_db():
-    return pymysql.connect(
-        host     = os.getenv("DB_HOST",     "localhost"),
-        user     = os.getenv("DB_USER",     "root"),
-        password = os.getenv("DB_PASSWORD", ""),
-        database = os.getenv("DB_NAME",     "quiz_system"),
-        cursorclass = pymysql.cursors.DictCursor,
-        autocommit  = True,
-    )
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/quiz_system")
+client    = MongoClient(MONGO_URI)
+db        = client[os.getenv("DB_NAME", "quiz_system")]
 
-def query(sql, args=(), one=False, commit=False):
-    db = get_db()
-    try:
-        with db.cursor() as cur:
-            cur.execute(sql, args)
-            if commit:
-                db.commit()
-                return cur.lastrowid
-            return cur.fetchone() if one else cur.fetchall()
-    finally:
-        db.close()
+# Collections
+admins        = db["admin"]
+participants  = db["participants"]
+questions     = db["questions"]
+quiz_settings = db["quiz_settings"]
+submissions   = db["submissions"]
+violations    = db["violations"]
+
+# ── Ensure a quiz_settings doc exists ──
+if quiz_settings.count_documents({}) == 0:
+    quiz_settings.insert_one({
+        "duration_minutes": 30,
+        "is_active":        False,
+        "start_time":       None,
+        "end_time":         None,
+        "max_violations":   3,
+    })
+
+# ──────────────────────────────────────────
+#  Helper: convert ObjectId → str in a doc
+# ──────────────────────────────────────────
+def fix(doc):
+    """Convert _id ObjectId to string 'id' so templates work like MySQL rows."""
+    if doc is None:
+        return None
+    doc = dict(doc)
+    if "_id" in doc:
+        doc["id"] = str(doc["_id"])
+    return doc
+
+def fix_many(docs):
+    return [fix(d) for d in docs]
 
 # ──────────────────────────────────────────
 #  Auth decorators
@@ -71,19 +88,19 @@ def participant_required(f):
     return dec
 
 # ──────────────────────────────────────────
-#  Utility
+#  Quiz helpers
 # ──────────────────────────────────────────
-def get_quiz_settings():
-    return query("SELECT * FROM quiz_settings ORDER BY id LIMIT 1", one=True)
+def get_settings():
+    return fix(quiz_settings.find_one())
 
-def quiz_is_open(settings=None):
-    s = settings or get_quiz_settings()
-    if not s or not s["is_active"]:
+def quiz_is_open(s=None):
+    s = s or get_settings()
+    if not s or not s.get("is_active"):
         return False
     now = datetime.now()
-    if s["start_time"] and now < s["start_time"]:
+    if s.get("start_time") and now < s["start_time"]:
         return False
-    if s["end_time"] and now > s["end_time"]:
+    if s.get("end_time")   and now > s["end_time"]:
         return False
     return True
 
@@ -92,8 +109,9 @@ def quiz_is_open(settings=None):
 # ──────────────────────────────────────────
 @app.route("/")
 def landing():
-    settings = get_quiz_settings()
-    return render_template("landing.html", quiz_open=quiz_is_open(settings), settings=settings)
+    settings = get_settings()
+    return render_template("landing.html",
+                           quiz_open=quiz_is_open(settings), settings=settings)
 
 # ──────────────────────────────────────────
 #  ADMIN — Login / Logout
@@ -105,9 +123,9 @@ def admin_login():
     if request.method == "POST":
         email    = request.form.get("email", "").strip()
         password = request.form.get("password", "")
-        admin    = query("SELECT * FROM admin WHERE email=%s", (email,), one=True)
+        admin    = admins.find_one({"email": email})
         if admin and bcrypt.check_password_hash(admin["password_hash"], password):
-            session["admin_id"]    = admin["id"]
+            session["admin_id"]    = str(admin["_id"])
             session["admin_email"] = admin["email"]
             flash("Welcome back!", "success")
             return redirect(url_for("admin_dashboard"))
@@ -116,7 +134,7 @@ def admin_login():
 
 @app.route("/admin/logout")
 def admin_logout():
-    session.pop("admin_id", None)
+    session.pop("admin_id",    None)
     session.pop("admin_email", None)
     return redirect(url_for("admin_login"))
 
@@ -126,16 +144,27 @@ def admin_logout():
 @app.route("/admin/dashboard")
 @admin_required
 def admin_dashboard():
-    settings       = get_quiz_settings()
-    total_q        = query("SELECT COUNT(*) AS c FROM questions WHERE is_active=1", one=True)["c"]
-    total_p        = query("SELECT COUNT(*) AS c FROM participants",                one=True)["c"]
-    total_attempts = query("SELECT COUNT(*) AS c FROM submissions",                 one=True)["c"]
-    total_viol     = query("SELECT SUM(violation_count) AS c FROM violations",      one=True)["c"] or 0
-    recent_subs    = query(
-        "SELECT s.*, p.name, p.register_no FROM submissions s "
-        "JOIN participants p ON p.id=s.participant_id "
-        "ORDER BY s.submitted_at DESC LIMIT 10"
-    )
+    settings       = get_settings()
+    total_q        = questions.count_documents({"is_active": True})
+    total_p        = participants.count_documents({})
+    total_attempts = submissions.count_documents({})
+    viol_agg       = list(violations.aggregate([
+        {"$group": {"_id": None, "total": {"$sum": "$violation_count"}}}
+    ]))
+    total_viol = viol_agg[0]["total"] if viol_agg else 0
+
+    # Recent submissions joined with participant names
+    recent_raw = list(submissions.find().sort("submitted_at", DESCENDING).limit(10))
+    recent_subs = []
+    for sub in recent_raw:
+        s = fix(sub)
+        pid = sub.get("participant_id")
+        p   = participants.find_one({"_id": ObjectId(pid)}) if pid else None
+        if p:
+            s["name"]        = p.get("name", "")
+            s["register_no"] = p.get("register_no", "")
+        recent_subs.append(s)
+
     return render_template("admin_dashboard.html",
         settings=settings, total_q=total_q, total_p=total_p,
         total_attempts=total_attempts, total_viol=total_viol,
@@ -149,15 +178,21 @@ def admin_dashboard():
 @admin_required
 def admin_save_settings():
     duration   = int(request.form.get("duration", 30))
-    is_active  = 1 if request.form.get("is_active") else 0
-    start_time = request.form.get("start_time") or None
-    end_time   = request.form.get("end_time")   or None
+    is_active  = bool(request.form.get("is_active"))
     max_viol   = int(request.form.get("max_violations", 3))
-    query(
-        "UPDATE quiz_settings SET duration_minutes=%s, is_active=%s, "
-        "start_time=%s, end_time=%s, max_violations=%s WHERE id=1",
-        (duration, is_active, start_time, end_time, max_viol), commit=True
-    )
+
+    start_raw  = request.form.get("start_time") or None
+    end_raw    = request.form.get("end_time")   or None
+    start_time = datetime.strptime(start_raw, "%Y-%m-%dT%H:%M") if start_raw else None
+    end_time   = datetime.strptime(end_raw,   "%Y-%m-%dT%H:%M") if end_raw   else None
+
+    quiz_settings.update_one({}, {"$set": {
+        "duration_minutes": duration,
+        "is_active":        is_active,
+        "start_time":       start_time,
+        "end_time":         end_time,
+        "max_violations":   max_viol,
+    }})
     flash("Quiz settings updated.", "success")
     return redirect(url_for("admin_dashboard"))
 
@@ -167,8 +202,8 @@ def admin_save_settings():
 @app.route("/admin/questions")
 @admin_required
 def admin_questions():
-    questions = query("SELECT * FROM questions ORDER BY id DESC")
-    return render_template("admin_questions.html", questions=questions)
+    qs = fix_many(questions.find().sort("_id", DESCENDING))
+    return render_template("admin_questions.html", questions=qs)
 
 @app.route("/admin/questions/add", methods=["GET", "POST"])
 @admin_required
@@ -184,43 +219,41 @@ def admin_add_question():
         if not all([q, a, b, c, d]):
             flash("All fields are required.", "danger")
             return redirect(request.url)
-        query(
-            "INSERT INTO questions (question_text,option_a,option_b,option_c,option_d,correct_answer,marks)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (q, a, b, c, d, ans, mrk), commit=True
-        )
+        questions.insert_one({
+            "question_text":  q,
+            "option_a": a, "option_b": b, "option_c": c, "option_d": d,
+            "correct_answer": ans, "marks": mrk, "is_active": True,
+            "created_at": datetime.now()
+        })
         flash("Question added.", "success")
         return redirect(url_for("admin_questions"))
     return render_template("admin_add_question.html", question=None)
 
-@app.route("/admin/questions/<int:qid>/edit", methods=["GET", "POST"])
+@app.route("/admin/questions/<qid>/edit", methods=["GET", "POST"])
 @admin_required
 def admin_edit_question(qid):
-    question = query("SELECT * FROM questions WHERE id=%s", (qid,), one=True)
+    question = fix(questions.find_one({"_id": ObjectId(qid)}))
     if not question:
         flash("Question not found.", "danger")
         return redirect(url_for("admin_questions"))
     if request.method == "POST":
-        q   = request.form.get("question_text", "").strip()
-        a   = request.form.get("option_a", "").strip()
-        b   = request.form.get("option_b", "").strip()
-        c   = request.form.get("option_c", "").strip()
-        d   = request.form.get("option_d", "").strip()
-        ans = request.form.get("correct_answer", "A")
-        mrk = int(request.form.get("marks", 1))
-        query(
-            "UPDATE questions SET question_text=%s,option_a=%s,option_b=%s,"
-            "option_c=%s,option_d=%s,correct_answer=%s,marks=%s WHERE id=%s",
-            (q, a, b, c, d, ans, mrk, qid), commit=True
-        )
+        questions.update_one({"_id": ObjectId(qid)}, {"$set": {
+            "question_text":  request.form.get("question_text", "").strip(),
+            "option_a":       request.form.get("option_a", "").strip(),
+            "option_b":       request.form.get("option_b", "").strip(),
+            "option_c":       request.form.get("option_c", "").strip(),
+            "option_d":       request.form.get("option_d", "").strip(),
+            "correct_answer": request.form.get("correct_answer", "A"),
+            "marks":          int(request.form.get("marks", 1)),
+        }})
         flash("Question updated.", "success")
         return redirect(url_for("admin_questions"))
     return render_template("admin_add_question.html", question=question)
 
-@app.route("/admin/questions/<int:qid>/delete", methods=["POST"])
+@app.route("/admin/questions/<qid>/delete", methods=["POST"])
 @admin_required
 def admin_delete_question(qid):
-    query("UPDATE questions SET is_active=0 WHERE id=%s", (qid,), commit=True)
+    questions.update_one({"_id": ObjectId(qid)}, {"$set": {"is_active": False}})
     flash("Question deleted.", "info")
     return redirect(url_for("admin_questions"))
 
@@ -230,15 +263,22 @@ def admin_delete_question(qid):
 @app.route("/admin/participants")
 @admin_required
 def admin_participants():
-    participants = query(
-        "SELECT p.*, s.score, s.total_marks, s.submitted_at, s.auto_submitted, "
-        "v.violation_count "
-        "FROM participants p "
-        "LEFT JOIN submissions s ON s.participant_id=p.id "
-        "LEFT JOIN violations  v ON v.participant_id=p.id "
-        "ORDER BY p.id DESC"
-    )
-    return render_template("admin_participants.html", participants=participants)
+    parts = []
+    for p in participants.find().sort("_id", DESCENDING):
+        row = fix(p)
+        pid = str(p["_id"])
+        sub = submissions.find_one({"participant_id": pid})
+        if sub:
+            row["score"]        = sub.get("score", 0)
+            row["total_marks"]  = sub.get("total_marks", 0)
+            row["submitted_at"] = sub.get("submitted_at")
+            row["auto_submitted"]= sub.get("auto_submitted", False)
+        else:
+            row["score"] = row["total_marks"] = None
+        viol = violations.find_one({"participant_id": pid})
+        row["violation_count"] = viol["violation_count"] if viol else 0
+        parts.append(row)
+    return render_template("admin_participants.html", participants=parts)
 
 # ──────────────────────────────────────────
 #  ADMIN — Violations
@@ -246,12 +286,15 @@ def admin_participants():
 @app.route("/admin/violations")
 @admin_required
 def admin_violations():
-    violations = query(
-        "SELECT v.*, p.name, p.register_no FROM violations v "
-        "JOIN participants p ON p.id=v.participant_id "
-        "ORDER BY v.timestamp DESC"
-    )
-    return render_template("admin_violations.html", violations=violations)
+    viols = []
+    for v in violations.find().sort("timestamp", DESCENDING):
+        row = fix(v)
+        pid = v.get("participant_id")
+        p   = participants.find_one({"_id": ObjectId(pid)}) if pid else None
+        row["name"]        = p["name"]        if p else "Unknown"
+        row["register_no"] = p["register_no"] if p else "—"
+        viols.append(row)
+    return render_template("admin_violations.html", violations=viols)
 
 # ──────────────────────────────────────────
 #  ADMIN — Leaderboard
@@ -259,15 +302,16 @@ def admin_violations():
 @app.route("/admin/leaderboard")
 @admin_required
 def admin_leaderboard():
-    board = query(
-        "SELECT p.name, p.register_no, s.score, s.total_marks, s.time_taken, "
-        "s.auto_submitted, s.submitted_at, "
-        "COALESCE(v.violation_count, 0) AS violations "
-        "FROM submissions s "
-        "JOIN participants p ON p.id = s.participant_id "
-        "LEFT JOIN violations v ON v.participant_id = s.participant_id "
-        "ORDER BY s.score DESC, s.time_taken ASC"
-    )
+    board = []
+    for sub in submissions.find().sort([("score", DESCENDING), ("time_taken", ASCENDING)]):
+        row = fix(sub)
+        pid = sub.get("participant_id")
+        p   = participants.find_one({"_id": ObjectId(pid)}) if pid else None
+        row["name"]        = p["name"]        if p else "Unknown"
+        row["register_no"] = p["register_no"] if p else "—"
+        viol = violations.find_one({"participant_id": pid}) if pid else None
+        row["violations"]  = viol["violation_count"] if viol else 0
+        board.append(row)
     return render_template("admin_leaderboard.html", board=board)
 
 # ──────────────────────────────────────────
@@ -276,29 +320,23 @@ def admin_leaderboard():
 @app.route("/admin/export/csv")
 @admin_required
 def admin_export_csv():
-    rows = query(
-        "SELECT p.name, p.register_no, p.email, s.score, s.total_marks, "
-        "s.time_taken, s.auto_submitted, s.submitted_at, "
-        "COALESCE(v.violation_count,0) AS violations "
-        "FROM submissions s "
-        "JOIN participants p ON p.id=s.participant_id "
-        "LEFT JOIN violations v ON v.participant_id=s.participant_id "
-        "ORDER BY s.score DESC"
-    )
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Name","Register No","Email","Score","Total","Time(s)",
                      "Auto-Submitted","Submitted At","Violations"])
-    for r in rows:
-        writer.writerow([r["name"], r["register_no"], r["email"], r["score"],
-                         r["total_marks"], r["time_taken"], r["auto_submitted"],
-                         r["submitted_at"], r["violations"]])
+    for sub in submissions.find().sort("score", DESCENDING):
+        pid  = sub.get("participant_id")
+        p    = participants.find_one({"_id": ObjectId(pid)}) if pid else {}
+        viol = violations.find_one({"participant_id": pid}) if pid else {}
+        writer.writerow([
+            p.get("name",""), p.get("register_no",""), p.get("email",""),
+            sub.get("score",0), sub.get("total_marks",0), sub.get("time_taken",0),
+            sub.get("auto_submitted",False), sub.get("submitted_at",""),
+            viol.get("violation_count",0) if viol else 0
+        ])
     output.seek(0)
-    return Response(
-        output,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=quiz_results.csv"}
-    )
+    return Response(output, mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=quiz_results.csv"})
 
 # ──────────────────────────────────────────
 #  PARTICIPANT — Login / Register
@@ -308,36 +346,36 @@ def participant_login():
     if session.get("participant_id"):
         return redirect(url_for("quiz_page"))
     if request.method == "POST":
-        name    = request.form.get("name", "").strip()
-        reg_no  = request.form.get("register_no", "").strip()
-        email   = request.form.get("email", "").strip().lower()
+        name   = request.form.get("name",        "").strip()
+        reg_no = request.form.get("register_no", "").strip()
+        email  = request.form.get("email",       "").strip().lower()
         if not all([name, reg_no, email]):
             flash("All fields are required.", "danger")
             return redirect(request.url)
-
-        # Check quiz is open
         if not quiz_is_open():
             flash("Quiz is not active right now.", "warning")
             return redirect(url_for("landing"))
 
-        # Get or create participant
-        p = query("SELECT * FROM participants WHERE register_no=%s OR email=%s",
-                  (reg_no, email), one=True)
+        p = participants.find_one({"$or": [
+            {"register_no": reg_no}, {"email": email}
+        ]})
         if p:
-            if p["attempt_status"] == "completed":
+            if p.get("attempt_status") == "completed":
                 flash("You have already completed this quiz. Only one attempt is allowed.", "danger")
                 return redirect(url_for("participant_login"))
         else:
-            pid = query(
-                "INSERT INTO participants (name, register_no, email) VALUES (%s,%s,%s)",
-                (name, reg_no, email), commit=True
-            )
-            p = query("SELECT * FROM participants WHERE id=%s", (pid,), one=True)
+            result = participants.insert_one({
+                "name": name, "register_no": reg_no, "email": email,
+                "attempt_status": "not_attempted", "quiz_start_time": None,
+                "created_at": datetime.now()
+            })
+            p = participants.find_one({"_id": result.inserted_id})
 
-        # Mark in_progress
-        query("UPDATE participants SET attempt_status='in_progress', quiz_start_time=NOW()"
-              " WHERE id=%s", (p["id"],), commit=True)
-        session["participant_id"]   = p["id"]
+        participants.update_one({"_id": p["_id"]}, {"$set": {
+            "attempt_status":  "in_progress",
+            "quiz_start_time": datetime.now()
+        }})
+        session["participant_id"]   = str(p["_id"])
         session["participant_name"] = p["name"]
         session["quiz_start_ts"]    = datetime.now().timestamp()
         return redirect(url_for("quiz_page"))
@@ -345,9 +383,9 @@ def participant_login():
 
 @app.route("/logout")
 def participant_logout():
-    session.pop("participant_id", None)
+    session.pop("participant_id",   None)
     session.pop("participant_name", None)
-    session.pop("quiz_start_ts", None)
+    session.pop("quiz_start_ts",    None)
     return redirect(url_for("landing"))
 
 # ──────────────────────────────────────────
@@ -356,28 +394,27 @@ def participant_logout():
 @app.route("/quiz")
 @participant_required
 def quiz_page():
-    # Already submitted?
-    p = query("SELECT * FROM participants WHERE id=%s",
-              (session["participant_id"],), one=True)
-    if p["attempt_status"] == "completed":
+    p = fix(participants.find_one({"_id": ObjectId(session["participant_id"])}))
+    if p and p.get("attempt_status") == "completed":
         return redirect(url_for("result_page"))
-
-    settings  = get_quiz_settings()
+    settings = get_settings()
     if not quiz_is_open(settings):
         flash("Quiz is not active.", "warning")
         return redirect(url_for("landing"))
 
-    questions = query(
-        "SELECT id, question_text, option_a, option_b, option_c, option_d, marks "
-        "FROM questions WHERE is_active=1 ORDER BY id"
-    )
-    # Compute remaining seconds
+    # Fetch questions WITHOUT correct_answer (never send to frontend)
+    qs = fix_many(questions.find(
+        {"is_active": True},
+        {"correct_answer": 0}          # exclude correct answer from query result
+    ).sort("_id", ASCENDING))
+
     start_ts   = session.get("quiz_start_ts") or datetime.now().timestamp()
     elapsed    = datetime.now().timestamp() - float(start_ts)
-    total_secs = settings["duration_minutes"] * 60
+    total_secs = (settings.get("duration_minutes", 30)) * 60
     remaining  = max(0, int(total_secs - elapsed))
+
     return render_template("quiz.html",
-        questions=questions, settings=settings,
+        questions=qs, settings=settings,
         remaining_seconds=remaining,
         participant_name=session["participant_name"]
     )
@@ -388,32 +425,38 @@ def quiz_page():
 @app.route("/api/violation", methods=["POST"])
 @participant_required
 def record_violation():
-    data       = request.get_json() or {}
-    v_type     = data.get("type", "tab_switch")
-    device     = data.get("device", "")[:500]
-    pid        = session["participant_id"]
+    data   = request.get_json() or {}
+    v_type = data.get("type", "tab_switch")
+    device = data.get("device", "")[:500]
+    pid    = session["participant_id"]
 
-    existing   = query("SELECT * FROM violations WHERE participant_id=%s", (pid,), one=True)
+    existing = violations.find_one({"participant_id": pid})
     if existing:
         new_count = existing["violation_count"] + 1
-        query("UPDATE violations SET violation_count=%s, violation_type=%s, timestamp=NOW()"
-              " WHERE participant_id=%s", (new_count, v_type, pid), commit=True)
+        violations.update_one({"participant_id": pid}, {"$set": {
+            "violation_count": new_count,
+            "violation_type":  v_type,
+            "timestamp":       datetime.now()
+        }})
     else:
         new_count = 1
-        query("INSERT INTO violations (participant_id, violation_count, violation_type, device_info)"
-              " VALUES (%s,%s,%s,%s)", (pid, 1, v_type, device), commit=True)
+        violations.insert_one({
+            "participant_id": pid, "violation_count": 1,
+            "violation_type": v_type, "device_info": device,
+            "timestamp": datetime.now()
+        })
 
-    settings  = get_quiz_settings()
-    max_viol  = settings["max_violations"] if settings else 3
-    return jsonify({"count": new_count, "max": max_viol, "auto_submit": new_count >= max_viol})
+    settings  = get_settings()
+    max_viol  = settings.get("max_violations", 3) if settings else 3
+    return jsonify({"count": new_count, "max": max_viol,
+                    "auto_submit": new_count >= max_viol})
 
 # ──────────────────────────────────────────
-#  API — Save Answers (auto-save)
+#  API — Save Answers (auto-save stub)
 # ──────────────────────────────────────────
 @app.route("/api/save-answers", methods=["POST"])
 @participant_required
 def save_answers():
-    # Just an acknowledgement — real save happens on submit
     return jsonify({"ok": True})
 
 # ──────────────────────────────────────────
@@ -422,51 +465,49 @@ def save_answers():
 @app.route("/api/submit", methods=["POST"])
 @participant_required
 def submit_quiz():
-    pid  = session["participant_id"]
-    p    = query("SELECT * FROM participants WHERE id=%s", (pid,), one=True)
-
-    # Guard: already submitted
-    if p["attempt_status"] == "completed":
+    pid = session["participant_id"]
+    p   = participants.find_one({"_id": ObjectId(pid)})
+    if p and p.get("attempt_status") == "completed":
         return jsonify({"error": "Already submitted."}), 400
 
-    data         = request.get_json() or {}
-    answers      = data.get("answers", {})    # { str(question_id): "A"|"B"|"C"|"D" }
-    time_taken   = int(data.get("time_taken", 0))
-    auto_submit  = bool(data.get("auto_submit", False))
+    data        = request.get_json() or {}
+    answers     = data.get("answers", {})       # { str(question_id): "A"|...|"D" }
+    time_taken  = int(data.get("time_taken", 0))
+    auto_submit = bool(data.get("auto_submit", False))
 
-    # Server-side time validation
-    settings    = get_quiz_settings()
-    start_ts    = session.get("quiz_start_ts") or datetime.now().timestamp()
-    elapsed     = datetime.now().timestamp() - float(start_ts)
-    total_secs  = (settings["duration_minutes"] if settings else 30) * 60
-    if elapsed > total_secs + 30:          # 30 s grace
+    # Server-side time guard
+    settings   = get_settings()
+    start_ts   = session.get("quiz_start_ts") or datetime.now().timestamp()
+    elapsed    = datetime.now().timestamp() - float(start_ts)
+    total_secs = (settings.get("duration_minutes", 30) if settings else 30) * 60
+    if elapsed > total_secs + 30:
         auto_submit = True
 
-    # Score calculation — NEVER send answers to frontend
-    questions   = query("SELECT id, correct_answer, marks FROM questions WHERE is_active=1")
+    # Server-side scoring — fetch WITH correct_answer
+    qs          = list(questions.find({"is_active": True}))
     score       = 0
     total_marks = 0
-    for q in questions:
-        total_marks += q["marks"]
-        if str(q["id"]) in answers:
-            if answers[str(q["id"])].upper() == q["correct_answer"]:
-                score += q["marks"]
+    for q in qs:
+        total_marks += q.get("marks", 1)
+        qid_str = str(q["_id"])
+        if qid_str in answers:
+            if answers[qid_str].upper() == q.get("correct_answer", "").upper():
+                score += q.get("marks", 1)
 
-    # Save submission
-    query(
-        "INSERT INTO submissions (participant_id, score, total_marks, time_taken, "
-        "auto_submitted, answers_json) VALUES (%s,%s,%s,%s,%s,%s)",
-        (pid, score, total_marks, time_taken, auto_submit,
-         json.dumps(answers)), commit=True
-    )
-    # Mark participant done
-    query("UPDATE participants SET attempt_status='completed' WHERE id=%s",
-          (pid,), commit=True)
+    submissions.insert_one({
+        "participant_id": pid,
+        "score":          score,
+        "total_marks":    total_marks,
+        "time_taken":     time_taken,
+        "auto_submitted": auto_submit,
+        "answers_json":   json.dumps(answers),
+        "submitted_at":   datetime.now()
+    })
+    participants.update_one({"_id": ObjectId(pid)},
+                            {"$set": {"attempt_status": "completed"}})
 
-    session["last_score"]       = score
-    session["last_total"]       = total_marks
-    session["last_time"]        = time_taken
-    session["last_auto"]        = auto_submit
+    session["last_score"] = score
+    session["last_total"] = total_marks
     return jsonify({"ok": True, "redirect": url_for("result_page")})
 
 # ──────────────────────────────────────────
@@ -476,37 +517,39 @@ def submit_quiz():
 @participant_required
 def result_page():
     pid = session["participant_id"]
-    sub = query(
-        "SELECT s.*, p.name, p.register_no FROM submissions s "
-        "JOIN participants p ON p.id=s.participant_id "
-        "WHERE s.participant_id=%s ORDER BY s.submitted_at DESC LIMIT 1",
-        (pid,), one=True
-    )
-    if not sub:
+    sub_doc = submissions.find_one({"participant_id": pid},
+                                   sort=[("submitted_at", DESCENDING)])
+    if not sub_doc:
         return redirect(url_for("quiz_page"))
 
-    # Rank
-    rank_row = query(
-        "SELECT COUNT(*) AS r FROM submissions WHERE score > %s", (sub["score"],), one=True
-    )
-    rank = (rank_row["r"] or 0) + 1
-    viol = query("SELECT * FROM violations WHERE participant_id=%s", (pid,), one=True)
-    violations = viol["violation_count"] if viol else 0
-    pct = round((sub["score"] / sub["total_marks"]) * 100, 1) if sub["total_marks"] else 0
+    sub = fix(sub_doc)
+    p   = participants.find_one({"_id": ObjectId(pid)})
+    sub["name"]        = p["name"]        if p else ""
+    sub["register_no"] = p["register_no"] if p else ""
+
+    # Rank: how many scored strictly more
+    rank = submissions.count_documents({"score": {"$gt": sub["score"]}}) + 1
+    viol = violations.find_one({"participant_id": pid})
+    violations_count = viol["violation_count"] if viol else 0
+    pct  = round((sub["score"] / sub["total_marks"]) * 100, 1) if sub.get("total_marks") else 0
+
     return render_template("result.html", sub=sub, rank=rank,
-                           violations=violations, pct=pct)
+                           violations=violations_count, pct=pct)
 
 # ──────────────────────────────────────────
 #  PUBLIC — Leaderboard
 # ──────────────────────────────────────────
 @app.route("/leaderboard")
 def leaderboard():
-    board = query(
-        "SELECT p.name, p.register_no, s.score, s.total_marks, "
-        "s.time_taken, s.submitted_at "
-        "FROM submissions s JOIN participants p ON p.id=s.participant_id "
-        "ORDER BY s.score DESC, s.time_taken ASC LIMIT 50"
-    )
+    board = []
+    for sub in submissions.find().sort([("score", DESCENDING),
+                                        ("time_taken", ASCENDING)]).limit(50):
+        row = fix(sub)
+        pid = sub.get("participant_id")
+        p   = participants.find_one({"_id": ObjectId(pid)}) if pid else None
+        row["name"]        = p["name"]        if p else "Unknown"
+        row["register_no"] = p["register_no"] if p else "—"
+        board.append(row)
     return render_template("leaderboard.html", board=board)
 
 # ──────────────────────────────────────────
